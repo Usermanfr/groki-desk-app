@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Desk</title>
+<style>body{margin:0;font:14px -apple-system,system-ui;background:#0b0e14;color:#e6e6e6;max-width:430px}
+nav{display:flex;position:sticky;top:0;background:#111}nav b{flex:1;padding:12px;text-align:center;cursor:pointer}nav b.on{color:#2ee6d6}
+.card{background:#161b26;margin:10px;padding:12px;border-radius:12px}.k{color:#888}.r{color:#ff5470}.g{color:#3ddc84}.pill{padding:2px 8px;border-radius:9px;font-size:12px}
+.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #222}.kill{color:#777;text-decoration:line-through #ff5470}
+a{color:#2ee6d6}.err{color:#ff5470;padding:20px}.empty{color:#777;padding:20px;text-align:center}</style></head><body>
+<nav><b data-t="home" class="on">Home</b><b data-t="agents">Agents</b><b data-t="activity">Activity</b><b data-t="account">Account</b></nav><main id="m"></main>
+<script>
+const h=new URLSearchParams(location.hash.slice(1));if(h.get('d'))localStorage.d=h.get('d');if(h.get('t'))localStorage.t=h.get('t');if(location.hash)history.replaceState(0,'',location.pathname);
+const D=localStorage.d;let tab='home',S=null,A=[],E=null;
+document.querySelectorAll('nav b').forEach(b=>b.onclick=()=>{tab=b.dataset.t;document.querySelectorAll('nav b').forEach(x=>x.classList.toggle('on',x==b));draw()});
+const $=s=>String(s??'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+async function load(){if(!D){E='Open the link with #d= once.';return draw()}try{S=await(await fetch(`d/${D}/state.json?`+Date.now())).json();A=await(await fetch(`d/${D}/activity.json?`+Date.now())).json();E=null}catch(e){E='Desk data unreachable. Retrying every 15s.'}draw()}
+function draw(){const m=document.getElementById('m');if(E)return m.innerHTML=`<div class="err">${$(E)}</div>`;if(!S)return m.innerHTML='<div class="empty">Loading…</div>';
+const P=S.mode=='PAPER'?'PAPER · ':'';const st=S.settings;
+if(tab=='home')m.innerHTML=`<div class="card"><div class="k">${P}Stack</div><h1>$${S.stack.toFixed(2)}</h1><div class="k">free $${S.balance.toFixed(2)}</div></div>`+
+ (S.positions.length?S.positions.map(p=>`<div class="card row"><a href="${$(p.link)}">${$(p.name)}</a><span>$${p.size.toFixed(2)} · stop -${p.stop_pct}%</span><a href="${$(p.link)}">Sell on FOMO</a></div>`).join(''):'<div class="empty">No open positions</div>');
+if(tab=='agents'){const c=S.counts;m.innerHTML=`<div class="card"><b>Scanner</b> · ${c.pools} pools${S.scans.slice(0,15).map(s=>`<div class="row ${s.verdict=='kill'?'kill':''}"><span>${$(s.name||s.mint.slice(0,6))}</span><span>${s.verdict=='pass'?'liq $'+Math.round(s.liquidityUsd)+' · → auditor':$(s.reason)}</span></div>`).join('')}</div>
+<div class="card"><b>Auditor</b> · ${c.audited} taken apart · ${c.audit_rejected} rejected${S.audits.slice(0,5).map(a=>`<div class="row"><span>${a.mint.slice(0,6)}</span><span class="${a.passed?'g':'r'}">${a.passed?'8/8 → Executor':$(a.reason)}</span></div>`).join('')}</div>
+<div class="card"><b>Analyst</b> · Scoring · ${c.scored} scored · ${st.analyst.mode}</div><div class="card"><b>Executor</b> · ${c.trades} trades · ${st.executor.stack_pct}% of stack</div>
+<div class="card"><b>Risk</b> · ${S.positions.length?'Guarding':'Idle'} <span class="pill r">stop -${st.risk.stop_pct}%</span> <span class="pill g">trail ${st.risk.trail_pct}%</span></div>`}
+if(tab=='activity')m.innerHTML=A.length?A.map(a=>`<div class="card row"><span>${a.mode=='PAPER'?'PAPER · ':''}${a.link?`<a href="${$(a.link)}">${$(a.title)}</a>`:$(a.title)}<br><span class="k">${$(a.sub)}</span></span><span>${$(a.right)}</span></div>`).join(''):'<div class="empty">No activity yet tonight</div>';
+if(tab=='account')m.innerHTML=`<div class="card">Mode ${S.mode} · FOMO @${$(st.desk.fomo_handle)}<br>Notifier: Discord. Web push is not available on this hosting (Plan B).<br>Settings are read-only here; change them on Discord/Grok Bot: <i>set stop to -8%</i><br><a href="${$(S.signup_url)}">Invite: ${$(S.signup_url)}</a></div>`+
+ Object.entries(st).map(([g,o])=>`<div class="card"><b>${g}</b>${Object.entries(o).map(([k,v])=>`<div class="row"><span class="k">${k}</span><span>${$(v)}</span></div>`).join('')}</div>`).join('')}
+load();setInterval(load,15000);
+</script></body></html>
