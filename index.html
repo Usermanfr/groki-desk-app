@@ -94,5 +94,106 @@ function draw(){
   if(tab=='account')m.innerHTML='<div class="card">Mode '+S.mode+' · FOMO @'+$(st.desk.fomo_handle)+'<br>Notifier: Discord. Web push is not available on this hosting (Plan B).<br>Settings are read-only here; change them on Discord/Grok Bot: <i>set stop to -8%</i><br><a href="'+$(S.signup_url)+'">Invite: '+$(S.signup_url)+'</a></div>'+
  Object.entries(st).map(([g,o])=>'<div class="card"><b>'+g+'</b>'+Object.entries(o).map(([k,v])=>'<div class="row"><span class="k">'+k+'</span><span>'+$(v)+'</span></div>').join('')+'</div>').join('')
 }
+
+/* Trade sounds — Web Audio, no files. Unlock on first tap (iOS). */
+let AC=null, soundOn=false, lastActId=null, primed=false;
+try{lastActId=parseInt(localStorage.getItem('lastActId')||'0',10)||0}catch(e){lastActId=0}
+function ensureAC(){
+  if(!AC){const C=window.AudioContext||window.webkitAudioContext; if(!C)return null; AC=new C()}
+  if(AC.state==='suspended')AC.resume();
+  return AC;
+}
+function tone(freq, t0, dur, type, gain, slide){
+  const ac=ensureAC(); if(!ac)return;
+  const o=ac.createOscillator(), g=ac.createGain(), f=ac.createBiquadFilter();
+  o.type=type||'sine'; o.frequency.setValueAtTime(freq, t0);
+  if(slide) o.frequency.exponentialRampToValueAtTime(Math.max(40,slide), t0+dur);
+  f.type='lowpass'; f.frequency.value=4200;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain||0.18, t0+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  o.connect(f); f.connect(g); g.connect(ac.destination);
+  o.start(t0); o.stop(t0+dur+0.05);
+}
+function sparkle(t0){
+  const ac=ensureAC(); if(!ac)return;
+  const n=ac.createBufferSource(), buf=ac.createBuffer(1, ac.sampleRate*0.12, ac.sampleRate);
+  const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+  const g=ac.createGain(), f=ac.createBiquadFilter();
+  f.type='highpass'; f.frequency.value=1800;
+  g.gain.setValueAtTime(0.08, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0+0.12);
+  n.buffer=buf; n.connect(f); f.connect(g); g.connect(ac.destination); n.start(t0); n.stop(t0+0.13);
+}
+function playBuy(){
+  const ac=ensureAC(); if(!ac||!soundOn)return;
+  const t=ac.currentTime+0.02;
+  // bright ascending power-up
+  [523.25,659.25,783.99,1046.5].forEach((f,i)=>tone(f, t+i*0.07, 0.28, i%2?'triangle':'sine', 0.16));
+  tone(1318.5, t+0.32, 0.45, 'sine', 0.1);
+  sparkle(t+0.28);
+}
+function playSell(){
+  const ac=ensureAC(); if(!ac||!soundOn)return;
+  const t=ac.currentTime+0.02;
+  // cash-out: quick down-blip then fat resolved chord
+  tone(880, t, 0.12, 'square', 0.07, 440);
+  tone(660, t+0.1, 0.14, 'square', 0.06, 330);
+  [392,493.88,587.33,784].forEach((f,i)=>tone(f, t+0.28+i*0.05, 0.4, 'triangle', 0.14));
+  tone(196, t+0.3, 0.5, 'sine', 0.12);
+  sparkle(t+0.45);
+}
+function unlockSound(){
+  const ac=ensureAC(); if(!ac)return;
+  soundOn=true;
+  try{localStorage.setItem('soundOn','1')}catch(e){}
+  // silent tick so iOS stays unlocked
+  tone(440, ac.currentTime, 0.01, 'sine', 0.0001);
+}
+try{if(localStorage.getItem('soundOn')==='1')soundOn=true}catch(e){}
+['pointerdown','touchstart','click'].forEach(ev=>document.addEventListener(ev,()=>{if(!primed){primed=true;unlockSound()}},{once:true,passive:true}));
+
+function watchTrades(){
+  if(!A||!A.length)return;
+  const maxId=Math.max(...A.map(a=>a.id||0));
+  if(!lastActId){ // first load: arm, don't replay history
+    lastActId=maxId;
+    try{localStorage.setItem('lastActId',String(lastActId))}catch(e){}
+    return;
+  }
+  if(maxId<=lastActId)return;
+  const fresh=A.filter(a=>(a.id||0)>lastActId).sort((a,b)=>a.id-b.id);
+  for(const a of fresh){
+    if(a.kind==='buy') playBuy();
+    else if(a.kind==='sell') playSell();
+  }
+  lastActId=maxId;
+  try{localStorage.setItem('lastActId',String(lastActId))}catch(e){}
+}
+
+const _load=load;
+load=async function(){
+  await _load();
+  watchTrades();
+};
+
+// Account: sound test buttons
+const _draw=draw;
+draw=function(){
+  _draw();
+  if(tab==='account' && S && !E){
+    const m=document.getElementById('m');
+    const box=document.createElement('div');
+    box.className='card';
+    box.innerHTML='<b>Sounds</b><div class="k" style="margin:6px 0 10px">Cooler Ping bei Buy &amp; Sell. Tippe einmal irgendwo, dann sind Sounds an.</div>'+
+      '<div style="display:flex;gap:8px"><button type="button" id="tb" style="flex:1;padding:10px;border:0;border-radius:10px;background:#3ddc84;color:#0b0e14;font-weight:700">Buy test</button>'+
+      '<button type="button" id="ts" style="flex:1;padding:10px;border:0;border-radius:10px;background:#ff5470;color:#0b0e14;font-weight:700">Sell test</button></div>';
+    m.appendChild(box);
+    const on=()=>{unlockSound();};
+    document.getElementById('tb').onclick=()=>{on();playBuy()};
+    document.getElementById('ts').onclick=()=>{on();playSell()};
+  }
+};
+
 load();setInterval(load,15000);
+
 </script></body></html>
